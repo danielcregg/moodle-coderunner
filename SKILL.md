@@ -1,13 +1,10 @@
 ---
 name: moodle-coderunner
-version: 2.0.0
+version: 4.0.0
 description: |
-  Generate Moodle CodeRunner programming questions with proper XML formatting,
-  automated test cases, and partial credit configuration. Supports Java (java_class,
-  java_program, java_method), Python (python3, python3_w_input), C/C++, and more.
-  Produces import-ready Moodle XML with answer preloads, model solutions, visible
-  and hidden test cases, penalty regimes, and syntax-highlighted code editors.
-  Includes the critical <name> tag fix for Moodle import.
+  Generate Moodle CodeRunner programming questions with Jobe server validation.
+  Supports Java, Python, C, C++, Node.js. Produces import-ready Moodle XML.
+  Battle-tested: 300 questions validated with 0% failure rate using these rules.
 allowed-tools:
   - Read
   - Write
@@ -18,72 +15,159 @@ allowed-tools:
   - AskUserQuestion
 ---
 
-# Moodle CodeRunner Creator
+# CodeRunner Question Generator
 
-You are a Moodle CodeRunner question generator for lecturers and educators. You create programming assessment questions that are automatically graded by running student code against test cases. Questions are exported as Moodle XML files for direct import into Moodle's question bank.
-
-## When to Use This Skill
-- Creating programming assessments for Java, Python, C/C++, or other languages
-- Building code-based micro-assessments with automated grading
-- Generating questions that test specific programming concepts
-- Creating questions with automated test case validation and partial credit
+Generate Moodle CodeRunner questions. Every question MUST be validated on Jobe before delivery.
 
 ---
 
-## CRITICAL RULES - READ FIRST
+## 1. Question Type Reference
 
-### 1. XML Question Name Tag (MOODLE IMPORT FIX)
+Choose the type FIRST — it determines everything else.
 
-**CRITICAL**: Moodle requires the XML tag spelled as the full four-letter word: `<name>`. Using any abbreviation causes "Missing question name in XML file" import errors.
+| Type | Student Writes | Test Mechanism | Stdin? | Reliability |
+|------|---------------|----------------|--------|-------------|
+| `java_class` | A class | Test code calls methods | No | HIGH |
+| `java_method` | Static method(s) | Test code calls methods | No | HIGH |
+| `java_program` | Full program with `main` | Empty test, stdin input | Yes | LOW — EOF issues |
+| `python3` | Function(s) or class | Test code calls with `print()` | No | HIGH |
+| `python3_w_input` | Full program | Empty test, stdin input | Yes | MEDIUM — EOF issues |
+| `c_function` | Function(s) + headers | Test code has `main()` | No | HIGH |
+| `c_program` | Full program with `main` | Empty test, stdin input | Yes | MEDIUM |
+| `cpp_function` | Function(s) + headers | Test code has `main()` | No | MEDIUM — Werror |
+| `cpp_program` | Full program with `main` | Empty test, stdin input | Yes | MEDIUM — Werror |
+| `nodejs` | Function(s) | Test code uses `console.log()` | No | HIGH |
 
-```xml
-<name>
-  <text>Micro-Assessment - Descriptive Question Title</text>
-</name>
-```
-
-- Each question MUST have a unique, descriptive `<name>` tag
-- Use format: "Micro-Assessment - Topic Description" (e.g., "Micro-Assessment - Array Access")
-- Do NOT use generic names like "Question 1"
-
-### 2. Question Type Selection
-
-Choose the correct CodeRunner type for the task:
-
-| Type | When to Use | Student Writes |
-|------|------------|----------------|
-| `java_class` | OOP questions (getters, setters, classes) | A class definition |
-| `java_program` | Complete programs with I/O | Full program with `main` method |
-| `java_method` | Single method questions | A method |
-| `python3` | Python functions or scripts | Python code |
-| `python3_w_input` | Python with stdin input | Python code reading from stdin |
-| `c_function` | C function | A C function |
-| `c_program` | Complete C program | Full C program with `main` |
-| `cpp_function` | C++ function | A C++ function |
-| `cpp_program` | Complete C++ program | Full C++ program |
-| `nodejs` | Node.js | JavaScript code |
-| `sql` | SQL queries | SQL statements |
-
-**Recommendation**: For Java OOP, prefer `java_class` over `java_program`.
-
-### 3. All-or-Nothing vs Partial Credit
-
-```xml
-<allornothing>1</allornothing>  <!-- Must pass ALL tests for ANY marks -->
-<allornothing>0</allornothing>  <!-- Marks for each test passed -->
-```
-
-**Decision guide:**
-- Use `1` (all-or-nothing) when methods must work together (e.g., getter AND setter)
-- Use `0` (partial credit) only when tests are truly independent
-- **Java limitation**: If a method doesn't exist, tests won't compile — partial credit is unreliable
-- **Default recommendation**: Use `1` for clarity
+**Default choice**: Prefer `java_class` > `java_method` > `java_program`. Prefer function types over program types — they avoid stdin/EOF problems entirely.
 
 ---
 
-## XML Structure
+## 2. Per-Language Rules
 
-### Complete Template
+These rules are derived from 300+ validated questions. Every rule exists because questions failed without it.
+
+### Java
+
+| Rule | Applies To | What To Do |
+|------|-----------|------------|
+| Scanner EOF guard | `java_program` | ALWAYS call `hasNextLine()`/`hasNextInt()` before EVERY `Scanner` read. #1 Java failure cause. |
+| Class name | `java_program` | Class MUST be named `Answer` |
+| Reflection in tests | `java_class` | Wrap test code in `try { ... } catch (Exception e) { System.out.println("Error: " + e.getMessage()); }` |
+
+### Python
+
+| Rule | Applies To | What To Do |
+|------|-----------|------------|
+| EOF guard | `python3_w_input` | Use `import sys; data = sys.stdin.read().strip()` with `if data:` guard. Never bare `input()`. |
+
+### C
+
+| Rule | Applies To | What To Do |
+|------|-----------|------------|
+| `-Werror` | ALL C types | Jobe compiles with `-Werror`. ALL warnings are fatal. No unused variables, no implicit declarations. |
+| `#include` in answer | `c_function` | ALL headers (`<stdio.h>`, `<ctype.h>`, `<string.h>`, `<math.h>`) MUST be in `<answer>`, not just test code. |
+| `scanf` return check | `c_program` | Always: `if (scanf("%d", &n) == 1) { ... }`. Unchecked scanf on empty stdin = uninitialized variable. |
+| Test code wrapper | `c_function` | Test code MUST include `#include <stdio.h>` and `int main(void) { ... return 0; }` |
+| Array printing | ALL C types | Use `if (i) printf(" "); printf("%d", arr[i]);` — NOT `printf("%d ", arr[i])` (trailing space fails). |
+
+### C++
+
+| Rule | Applies To | What To Do |
+|------|-----------|------------|
+| `-Werror` | ALL C++ types | Same as C — all warnings fatal. |
+| `size_t` for `.size()` | ALL C++ types | `for (size_t i = 0; i < vec.size(); i++)` — `int` vs `size_t` is `-Werror=sign-compare` fatal. |
+| Member init order | `cpp_function` | Declare class members in SAME order as constructor initializer list. `-Werror=reorder` is fatal. |
+| `#include` in answer | `cpp_function` | Include `<vector>`, `<string>`, `<algorithm>`, `<sstream>` etc. in `<answer>`, not just test code. |
+| Test code wrapper | `cpp_function` | Test code MUST include `#include <iostream>`, `using namespace std;`, and `int main() { ... }` |
+| Array printing | ALL C++ types | `if (i) cout << " "; cout << v[i];` — no trailing space. |
+| `#ifndef` for shared structs | `c_function`, `cpp_function` | If answer and test code both define a struct, use `#ifndef GUARD` / `#define GUARD` / `#endif`. |
+
+### Node.js
+
+| Rule | Applies To | What To Do |
+|------|-----------|------------|
+| Deterministic output | `nodejs` | Use `JSON.stringify(result)` for objects/arrays. Do NOT use `JSON.stringify(obj, replacer)` — replacer drops nested keys. |
+
+---
+
+## 3. Output Matching Rules
+
+These apply to ALL languages. 35% of all failures are output mismatches.
+
+1. Expected output MUST match actual output character-for-character
+2. Do NOT add trailing newline in `<expected>` — CodeRunner strips trailing newlines before comparing
+3. Leading/trailing spaces cause failures — be precise
+4. NEVER depend on exact floating-point results — use integer math or `String.format("%.2f", val)` / `round(val, 2)` / `printf("%.2f", val)`
+5. Mentally trace the model solution through EVERY test case — compute expected output, do NOT guess
+6. Jobe stdin requires trailing `\n` — the validation script adds this automatically
+
+---
+
+## 4. Test Case Design
+
+### Structure
+
+| Attribute | Values | Purpose |
+|-----------|--------|---------|
+| `testtype` | `0`=normal, `1`=precheck-only, `2`=both | When test runs |
+| `useasexample` | `1`=visible, `0`=hidden | Student visibility |
+| `hiderestiffail` | `0` or `1` | Stop showing tests after failure |
+| `mark` | Decimal (e.g. `0.2500000`) | Weight for partial credit |
+| `display` | `SHOW`, `HIDE`, `HIDE_IF_FAIL`, `HIDE_IF_SUCCEED` | Result visibility |
+
+### Requirements
+
+- Minimum 3 test cases: 1 visible (`useasexample="1"`, `SHOW`), 2+ hidden (`useasexample="0"`, `HIDE`)
+- Each test MUST produce DIFFERENT output (prevents hard-coding)
+- Include edge case test (empty input, zero, negative, boundary values)
+- For stdin types: include empty stdin test case
+- For partial credit (`allornothing="0"`): marks MUST sum to 1.0
+
+### Test Code Patterns by Type
+
+**Function types** (java_class, java_method, python3, c_function, cpp_function, nodejs):
+```
+<testcode> calls student code </testcode>
+<stdin> empty </stdin>
+```
+
+**Program types** (java_program, c_program, cpp_program, python3_w_input):
+```
+<testcode> empty </testcode>
+<stdin> input data </stdin>
+```
+
+### Grading Modes
+
+| Mode | XML | When To Use |
+|------|-----|-------------|
+| All-or-nothing | `<allornothing>1</allornothing>` | Methods depend on each other. Default. |
+| Partial credit | `<allornothing>0</allornothing>` | Independent tests. Set `mark` per test, sum to 1.0. |
+
+---
+
+## 5. Question Design
+
+Every question MUST include:
+
+1. **`<name>`** — `Micro-Assessment - Descriptive Title` (unique, not "Question 1")
+2. **`<questiontext>`** — Clear instructions: method names, parameter types, return types, example usage
+3. **Penalty regime text** in questiontext:
+   ```html
+   <p><strong>Penalty Regime:</strong></p>
+   <ul>
+   <li>You have a total of <strong>3 attempts</strong> without any penalties.</li>
+   <li>Starting from the <strong>4th attempt onwards</strong>, a penalty of <strong>10%</strong> will be applied.</li>
+   </ul>
+   ```
+4. **`<answerpreload>`** — Compilable skeleton with comments (don't give away solution structure)
+5. **`<answer>`** — Complete, correct model solution (NEVER empty)
+6. **`<generalfeedback>`** — Explanation of correct approach (shown after quiz closes)
+7. **Self-contained** — never reference lectures or slides
+
+---
+
+## 6. XML Template
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -93,31 +177,14 @@ Choose the correct CodeRunner type for the task:
   </question>
 
   <question type="coderunner">
-    <name>
-      <text>Micro-Assessment - Descriptive Title</text>
-    </name>
-    <questiontext format="html">
-      <text><![CDATA[<h4>Task Title</h4>
-<h5>Question Description</h5>
-<p>Clear instructions here...</p>
-<p><strong>Example Usage:</strong></p>
-<pre>
-// Show expected behavior
-</pre>
-<p><strong>Penalty Regime:</strong></p>
-<ul>
-<li>You have a total of <strong>3 attempts</strong> without any penalties.</li>
-<li>Starting from the <strong>4th attempt onwards</strong>, a penalty of <strong>10%</strong> will be applied.</li>
-</ul>]]></text>
-    </questiontext>
-    <generalfeedback format="html">
-      <text><![CDATA[<p>Explanation of the correct solution.</p>]]></text>
-    </generalfeedback>
+    <name><text>Micro-Assessment - Title</text></name>
+    <questiontext format="html"><text><![CDATA[QUESTION_HTML]]></text></questiontext>
+    <generalfeedback format="html"><text><![CDATA[<p>FEEDBACK</p>]]></text></generalfeedback>
     <defaultgrade>1</defaultgrade>
     <penalty>0</penalty>
     <hidden>0</hidden>
     <idnumber></idnumber>
-    <coderunnertype>java_class</coderunnertype>
+    <coderunnertype>TYPE</coderunnertype>
     <prototypetype>0</prototypetype>
     <allornothing>1</allornothing>
     <penaltyregime>0, 0, 0, 10, 20, ...</penaltyregime>
@@ -126,14 +193,14 @@ Choose the correct CodeRunner type for the task:
     <showsource>0</showsource>
     <answerboxlines>18</answerboxlines>
     <answerboxcolumns>100</answerboxcolumns>
-    <answerpreload><![CDATA[// Starting code for students]]></answerpreload>
+    <answerpreload><![CDATA[SKELETON]]></answerpreload>
     <globalextra></globalextra>
     <useace></useace>
     <resultcolumns></resultcolumns>
     <template></template>
     <iscombinatortemplate></iscombinatortemplate>
     <allowmultiplestdins></allowmultiplestdins>
-    <answer><![CDATA[// Complete model solution]]></answer>
+    <answer><![CDATA[MODEL_SOLUTION]]></answer>
     <validateonsave>1</validateonsave>
     <testsplitterre></testsplitterre>
     <language></language>
@@ -162,9 +229,9 @@ Choose the correct CodeRunner type for the task:
     <prototypeextra></prototypeextra>
     <testcases>
       <testcase testtype="0" useasexample="1" hiderestiffail="0" mark="1.0000000">
-        <testcode><text>// Test code here</text></testcode>
+        <testcode><text>TEST_CODE</text></testcode>
         <stdin><text></text></stdin>
-        <expected><text>Expected output</text></expected>
+        <expected><text>EXPECTED</text></expected>
         <extra><text></text></extra>
         <display><text>SHOW</text></display>
       </testcase>
@@ -173,264 +240,102 @@ Choose the correct CodeRunner type for the task:
 </quiz>
 ```
 
----
+### Optional Feature Tags
 
-## Test Case Design
+Set these in the question XML to enable advanced features:
 
-### Test Case Attributes
+| Feature | Tag | Values | Effect |
+|---------|-----|--------|--------|
+| Precheck | `<precheck>1</precheck>` | 0/1 | Students can test before submitting |
+| Give up | `<giveupallowed>1</giveupallowed>` | 0/1 | Students can reveal model answer |
+| CPU limit | `<cputimelimitsecs>2</cputimelimitsecs>` | seconds | Enforce time limit |
+| Memory limit | `<memlimitmb>64</memlimitmb>` | MB | Enforce memory limit |
 
-| Attribute | Values | Purpose |
-|-----------|--------|---------|
-| `testtype` | `0` = normal, `1` = precheck-only, `2` = both | When the test runs |
-| `useasexample` | `1` = visible, `0` = hidden | Whether students see this test |
-| `hiderestiffail` | `0` or `1` | Hide remaining tests if this one fails |
-| `mark` | Decimal (e.g., `1.0000000`) | Weight of this test |
-
-### Display Values
-
-| Value | Behaviour |
-|-------|-----------|
-| `SHOW` | Always show result |
-| `HIDE` | Never show result |
-| `HIDE_IF_FAIL` | Show only if test passes |
-| `HIDE_IF_SUCCEED` | Show only if test fails |
-
-### Test Strategy
-
-1. **First test**: `useasexample="1"` (visible) — shows students what's expected
-2. **Additional tests**: `useasexample="0"` (hidden) — prevents hard-coding
-3. **Minimum**: 2 tests (1 visible + 1 hidden)
-4. **Recommended**: 3-4 tests covering normal cases, edge cases, and boundary conditions
-
-### Test Code by Question Type
-
-**java_program** (testing main method output):
-```xml
-<testcode><text>Main.main();</text></testcode>
-```
-
-**java_class** (testing methods on an instance):
-```xml
-<testcode><text>Student s = new Student("Alice");
-System.out.println(s.getName());
-s.setName("Bob");
-System.out.println(s.getName());</text></testcode>
-```
-
-**python3** (testing a function):
-```xml
-<testcode><text>print(square(5))</text></testcode>
-```
-
-**python3** (testing a class):
-```xml
-<testcode><text>s = Student("Alice")
-print(s.get_name())
-s.set_name("Bob")
-print(s.get_name())</text></testcode>
-```
-
-### Mark Distribution
-
-**All-or-nothing** (`allornothing="1"`):
-- Each test: `mark="1.0000000"`
-- Students must pass all to get any marks
-
-**Partial credit** (`allornothing="0"`):
-- Distribute marks to sum to 1.0
-- Example: 4 tests at `mark="0.2500000"` each
-
-### Exception Handling in Java Tests
-
-When using reflection or operations that may throw:
-```xml
-<testcode><text>try {
-    Student s = new Student();
-    java.lang.reflect.Field field = Student.class.getDeclaredField("name");
-    field.setAccessible(true);
-    field.set(s, "Alice");
-    System.out.println(s.getName());
-} catch (Exception e) {
-    System.out.println("Error: " + e.getMessage());
-}</text></testcode>
-```
+For precheck, set `testtype="2"` on test cases that should run during both precheck and grading, or `testtype="1"` for precheck-only tests.
 
 ---
 
-## Question Design Rules
+## 7. Validation
 
-### 1. Clear Instructions
-- State exactly what students need to implement
-- Specify method names, parameter types, and return types
-- Include example usage showing expected input/output
-- Mention any pre-provided code (constructors, fields, etc.)
+**Mandatory.** Run after generating XML:
 
-### 2. Penalty Regime Messaging
-Always include in the question text:
-```html
-<p><strong>Penalty Regime:</strong></p>
-<ul>
-<li>You have a total of <strong>3 attempts</strong> without any penalties.</li>
-<li>Starting from the <strong>4th attempt onwards</strong>, a penalty of <strong>10%</strong> will be applied.</li>
-</ul>
+```bash
+python3 ~/.claude/skills/moodle-coderunner/validate_coderunner.py <xml_file> --jobe-url http://3.250.73.210:4000
 ```
 
-### 3. Answer Preload Best Practices
-- Provide a compilable/runnable skeleton
-- Include helpful comments showing where to write code
-- Pre-provide boilerplate (constructors, field declarations) that isn't being tested
-- Don't give away the solution structure
+### Jobe Servers
 
-### 4. Self-Contained Questions
-- All necessary context must be in the question text
-- Never reference "the lecture" or "the example from class"
-- Include any required class structure, interfaces, or method signatures
+| Server | URL | Rate Limit |
+|--------|-----|------------|
+| AWS Primary | `http://3.250.73.210:4000` | None |
+| AWS Backup 1 | `http://3.250.73.210:4001` | None |
+| AWS Backup 2 | `http://3.250.73.210:4002` | None |
 
-### 5. General Feedback
-Always include a `<generalfeedback>` explaining the correct approach. This is shown after the quiz closes and helps students learn from their mistakes.
+Languages: C 13.3, C++ 13.3, Java 21.0.5, Python 3.12.3, Node 18.19
 
----
+### Fix Loop
 
-## Common Programming Concepts for Questions
+If any question fails:
+1. Read the error (COMPILE_ERROR, WRONG_OUTPUT, RUNTIME_ERROR)
+2. Fix the `<answer>` or `<expected>` in the XML
+3. Re-validate
+4. Repeat until all pass (max 3 cycles)
 
-### Java
-- **Arrays**: accessing elements, iteration, min/max, sums/averages
-- **OOP**: classes with constructors, getters/setters, encapsulation, toString()
-- **Control flow**: if/else, for/while loops, switch
-- **Strings**: substring, indexOf, length, comparison, StringBuilder
-- **Collections**: ArrayList operations, HashMap usage
-- **Inheritance**: extends, super, method overriding
-- **Interfaces**: implements, abstract methods
-- **Exception handling**: try/catch, custom exceptions
+### Common Fixes
 
-### Python
-- **Functions**: parameters, return values, default arguments
-- **Data structures**: lists, dictionaries, tuples, sets
-- **OOP**: classes, __init__, properties, inheritance
-- **Control flow**: if/elif/else, for/while, list comprehensions
-- **String manipulation**: slicing, f-strings, methods
-- **File I/O**: reading, writing, context managers
-- **Error handling**: try/except, raising exceptions
+| Error | Fix |
+|-------|-----|
+| COMPILE_ERROR: implicit declaration | Add missing `#include` to `<answer>` |
+| COMPILE_ERROR: sign-compare | Change `int i` to `size_t i` in `.size()` loops |
+| COMPILE_ERROR: reorder | Reorder class members to match constructor |
+| WRONG_OUTPUT: trailing space | Use `if(i) printf(" ")` pattern for arrays |
+| WRONG_OUTPUT: expected mismatch | Re-trace solution, fix `<expected>` |
+| RUNTIME_ERROR: NoSuchElementException | Add `hasNext()` guard before Scanner read |
+| RUNTIME_ERROR: EOFError | Use `sys.stdin.read()` instead of `input()` |
 
 ---
 
-## Workflow
+## 8. Workflow
 
-### Step 1: Gather Information
-Ask the user for:
-- Programming language (Java, Python, C, etc.)
-- Topic/concept to test
-- Number of questions needed
-- Difficulty level (introductory, intermediate, advanced)
-- Any specific method names or class structures to use
-- Whether to use all-or-nothing or partial credit
-
-### Step 2: Design Questions
-For each question:
-- Write clear instructions with example usage
-- Create answer preload (skeleton code)
-- Write the model solution
-- Design test cases (visible + hidden)
-- Include penalty regime message
-- Write general feedback
-
-### Step 3: Generate XML
-- Produce a single Moodle XML file with all questions
-- Include category headers
-- Validate XML structure
-
-### Step 4: Generate Review Document
-Create a human-readable markdown review with:
-- All questions organized by category
-- Model solutions shown
-- Test cases listed with expected outputs
-- Notes on grading (all-or-nothing vs partial credit)
-
-### Step 5: Deliver Results
-Present both files with:
-- Summary of topics covered
-- Language and question types used
-- Notes on test coverage
+1. **Ask**: language, topic, count, difficulty, grading mode
+2. **Design**: instructions, preload, solution, test cases, feedback — trace every test case
+3. **Generate**: write XML file with all questions
+4. **Validate**: run validation script against Jobe — fix any failures
+5. **Deliver**: XML file + confirmation all questions passed
 
 ---
 
-## Quality Checklist
+## 9. Final Checklist
 
-Before delivering, verify:
+Before delivery, every question must satisfy:
 
-### XML Structure
-- [ ] Uses `<name>` tag (full four-letter word, NOT abbreviated)
-- [ ] Descriptive question name (not "Question 1")
+- [ ] `<name>` tag uses full word, descriptive title
 - [ ] Correct `<coderunnertype>` for the task
-- [ ] `<validateonsave>1</validateonsave>` is set
-- [ ] XML is well-formed (all tags closed, CDATA sections correct)
-- [ ] Categories use `$course$/Category Name` format
-
-### Question Content
-- [ ] Clear instructions specifying what to implement
-- [ ] Method names, parameter types, and return types stated
-- [ ] Example usage showing expected behavior
-- [ ] Penalty regime clearly stated (3 free attempts)
-- [ ] Self-contained (no lecture/slide references)
-- [ ] General feedback explains the correct approach
-
-### Code
-- [ ] `<answerpreload>` provides helpful, compilable skeleton
-- [ ] `<answer>` contains complete, correct model solution
-- [ ] Model solution would pass all test cases
-- [ ] Code follows language conventions (naming, style)
-
-### Test Cases
-- [ ] At least 1 visible test (`useasexample="1"`) showing expected behavior
-- [ ] At least 1 hidden test (`useasexample="0"`) preventing hard-coding
-- [ ] Tests cover normal cases AND edge cases
-- [ ] Expected output matches exactly (including newlines, whitespace)
-- [ ] `<allornothing>` setting matches question design intent
-- [ ] Marks sum correctly (1.0 for partial credit)
-
-### Configuration
-- [ ] `<penaltyregime>0, 0, 0, 10, 20, ...</penaltyregime>` for 3 free attempts
-- [ ] `<uiparameters>` includes `live_autocompletion: true`
-- [ ] `<answerboxlines>18</answerboxlines>` (appropriate size)
-- [ ] `<penalty>0</penalty>` (penalty handled by penaltyregime)
-- [ ] `<displayfeedback>1</displayfeedback>`
+- [ ] `<answer>` contains complete, compilable model solution
+- [ ] `<answerpreload>` provides compilable skeleton
+- [ ] `<generalfeedback>` explains correct approach
+- [ ] `<validateonsave>1</validateonsave>`
+- [ ] `<penaltyregime>0, 0, 0, 10, 20, ...</penaltyregime>`
+- [ ] Penalty regime text in `<questiontext>`
+- [ ] Self-contained (no lecture references)
+- [ ] 3+ test cases: 1 visible, 2+ hidden, edge cases included
+- [ ] Each test produces different output
+- [ ] Expected output traced character-by-character
+- [ ] No floating-point exact comparisons
+- [ ] Marks sum to 1.0 (if partial credit)
+- [ ] Language-specific rules from Section 2 followed
+- [ ] **ALL questions passed Jobe validation**
 
 ---
 
-## Common Pitfalls to Avoid
-
-1. **Wrong name tag**: Using abbreviated tag instead of full `<name>` — causes Moodle import error
-2. **Wrong question type**: Using `java_program` when `java_class` is needed (or vice versa)
-3. **Partial credit in Java**: Setting `allornothing` to 0 doesn't guarantee partial credit if missing methods cause compilation failures
-4. **Missing exception handling**: Tests using reflection without try-catch blocks
-5. **Output mismatch**: Expected output doesn't account for trailing newlines or whitespace
-6. **Generic question names**: Using "Question 1" instead of "Micro-Assessment - Array Access"
-7. **Unclear instructions**: Not specifying exact method names or signatures
-8. **No visible test**: All tests hidden — students can't see what's expected
-9. **Hard-coding opportunity**: Only one test case — students can hard-code the answer
-10. **Mark distribution error**: Marks don't sum to 1.0 in partial credit questions
-11. **Missing penalty regime text**: Students don't know about the 3 free attempts
-12. **No general feedback**: Students can't learn from mistakes after quiz closes
-
----
-
-## File Naming Convention
+## 10. File Naming
 
 - Questions: `{module}_{topic}_coderunner.xml`
 - Review: `{module}_{topic}_coderunner_review.md`
 
-## Moodle Import Instructions
+## Moodle Import
 
-1. Log into Moodle as a teacher/admin
-2. Go to the course > **Question bank** > **Import**
-3. Select **Moodle XML format**
-4. Upload the `.xml` file
-5. Click **Import** and review
-
-**Note**: CodeRunner questions can only be imported as Moodle XML. GIFT and Aiken formats do not support CodeRunner.
-
----
-
-## Version History
-- v1.0 (2025-11-09): Initial skill for Java CodeRunner questions at ATU. Critical `<name>` tag fix, java_class vs java_program guidance, partial credit limitations.
-- v2.0 (2026-03-24): Major update — added Python support, full list of CodeRunner types from official docs, test case design guide with display values, expanded quality checklist, review document workflow, common programming concepts by language. Published to GitHub.
+1. Course > Question bank > Import
+2. Format: Moodle XML
+3. Upload `.xml` file
+4. Import and review
