@@ -1,4 +1,4 @@
-<h1 align="center">Moodle CodeRunner</h1>
+<h1 align="center">CodeRunner Skill</h1>
 
 <p align="center">
   <strong>AI skill for generating validated Moodle CodeRunner programming questions</strong>
