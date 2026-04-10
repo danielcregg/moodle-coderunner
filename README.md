@@ -6,8 +6,8 @@
 
 <p align="center">
   <a href="https://github.com/danielcregg/moodle-coderunner/blob/master/LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
-  <img src="https://img.shields.io/badge/Version-4.0.0-green.svg" alt="Version 4.0.0">
-  <img src="https://img.shields.io/badge/Questions%20Validated-300-brightgreen.svg" alt="300 Questions Validated">
+  <img src="https://img.shields.io/badge/Version-6.0.0-green.svg" alt="Version 4.0.0">
+  <img src="https://img.shields.io/badge/Questions%20Validated-1000%2B-brightgreen.svg" alt="300 Questions Validated">
   <img src="https://img.shields.io/badge/Pass%20Rate-100%25-brightgreen.svg" alt="100% Pass Rate">
   <img src="https://img.shields.io/badge/Claude%20Code-blueviolet.svg" alt="Claude Code">
   <img src="https://img.shields.io/badge/ChatGPT%20GPT-Compatible-blue.svg" alt="ChatGPT Compatible">
@@ -16,11 +16,11 @@
 </p>
 
 <p align="center">
-  Generate auto-graded programming questions for Moodle's <a href="https://coderunner.org.nz/">CodeRunner</a> plugin. Every question is compiled and tested on a <a href="https://github.com/trampgeek/jobe">Jobe</a> server before delivery. Supports Java, Python, C, C++, and Node.js across 10 question types.
+  Generate auto-graded programming questions using the minimal pipeline (AI writes code, Jobe computes expected output) for Moodle's <a href="https://coderunner.org.nz/">CodeRunner</a> plugin. Every question is compiled and tested on a <a href="https://github.com/trampgeek/jobe">Jobe</a> server before delivery. Supports Java, Python, C, C++, and Node.js across 10 question types.
 </p>
 
 <p align="center">
-  <strong>Battle-tested:</strong> 300 questions generated and validated with a 100% pass rate.
+  <strong>Battle-tested:</strong> 1000+ questions generated and validated with a 100% pass rate.
 </p>
 
 ---
